@@ -3,8 +3,9 @@
 #define GeneratorOutput_PIN  6  // Arduino pin tied to generator
 #define Serial_BaudRate 9600
 #define CommandID_PingPong 0
-#define CommandID_PulseWidth 1
-#define CommandID_PulseHigh 2
+#define CommandID_PulseHigh 1
+#define CommandID_PulseLow 2
+#define CommandID_PulseHighAndLow 3
 #define CommandID_GetSettings 5
 #define CommandID_Reset 9
 #define TimerInterrruptInterval 500
@@ -23,7 +24,7 @@ const int BUFFER_SIZE = 32;
 uint8_t  SerialIncomming[BUFFER_SIZE];
 int SerialIncomming_Lenght = 0;
 int Serial_index=-1;  // -1 equals no valid data in SerialIncomming buffer
-unsigned int PulseWidthHigh = 2;
+unsigned int PulseWidthHigh = 1;  // 1 will take the time of "TimerInterrruptInterval", i.e. 500 usec
 unsigned int PulseWidthLow  = 1;
 volatile unsigned int InterruptCnt = 0;
 volatile unsigned int InterruptNextEvent = 0;
@@ -69,7 +70,8 @@ void loop()
       Serial.println("----------------------------------------------------------");
       Serial.println("Generator using Arduino Nano, minumum step is 500 usec");
       Serial.println("Set high pulse width in usec: [1%%xxxx]");
-      Serial.println("Set low pulse width in usec: [2%%xxxx]");
+      Serial.println("Set low pulse width in usec:  [2%%xxxx]");
+      Serial.println("Set both pulse width in usec: [3%%xxxx]");
       Serial.println("   where xxxx is time in usec rouneded to nearest 500 usec");
       Serial.println("Get current settings: [5%%]");
       Serial.println("Reset to default    : [9%%]");
@@ -107,7 +109,7 @@ void loop()
 
 void HandleSerialCommand()
 {
-  Serial.println("evaluating message");
+  Serial.println("----------------------------------");
   /* ***********************************************************************
       eval command format:
       SerialIncomming[0] & SerialIncomming[1] is command number
@@ -157,6 +159,25 @@ void HandleSerialCommand()
       Serial.print("New logic Low width: "); 
       Serial.println(PulseWidthLow* TimerInterrruptInterval); 
     }
+    else if (SerialIncomming[0] == '3')  // set width high & low
+    {
+      char input[SerialIncomming_Lenght-1] ; 
+      for (int i = 2 ; i <= SerialIncomming_Lenght ; i++)
+      {
+        input[i-2] = SerialIncomming[i];
+      } 
+      input[SerialIncomming_Lenght-1] ="\n";
+      long value1 = atol(input);
+      PulseWidthHigh= (unsigned int)(value1 / TimerInterrruptInterval);
+      PulseWidthLow = (unsigned int)(value1 / TimerInterrruptInterval);
+      if (PulseWidthLow< 1)
+      {
+        PulseWidthHigh= 1;  // handle special case
+        PulseWidthLow = 1;  // handle special case
+      }
+      Serial.print("New logic High and Low width: "); 
+      Serial.println(PulseWidthLow* TimerInterrruptInterval); 
+    }
     else if (SerialIncomming[0]  == '5')  // get settings
     {
       Serial.println("\nCurrent settings:"); 
@@ -183,8 +204,6 @@ void HandleSerialCommand()
 
 void timerInterrupt()
 {
-  InterruptCnt++; // variable to keep track of overall timing.
-
   if (InterruptCnt>=InterruptNextEvent)
   {
     bool val = digitalRead(GeneratorOutput_PIN);  // read the input pin
@@ -196,6 +215,7 @@ void timerInterrupt()
     else
       InterruptNextEvent = InterruptCnt + PulseWidthHigh;
   }
+  InterruptCnt++; // variable to keep track of overall timing, processed so that data is ready for next IRQ.
 }
 
 
